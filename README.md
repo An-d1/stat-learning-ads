@@ -3,27 +3,8 @@
 # Statistical Learning Project — Global Ads Performance (R)
 
 This repository contains our Statistical Learning group project using a global ads performance dataset.  
-We perform:
-- **Exploratory Data Analysis (EDA)**
-- **Supervised learning** (regression + model comparison, optionally regularization)
-- **Unsupervised learning** (PCA + clustering)
-- A reproducible workflow in **R** using **renv**
 
 ---
-
-## Repository Structure
-
-├── data/
-│ ├── raw/ # Original dataset (do not edit)
-│ └── processed/ # Cleaned/feature-engineered data created by scripts
-├── R/ # R scripts (run in order)
-├── outputs/
-│ ├── figures/ # Generated plots
-│ └── tables/ # Generated tables
-├── report/ # Final report (.Rmd) and knitted outputs
-├── renv.lock # Locked package versions (reproducibility)
-├── .Rprofile # Auto-activates renv when opening the project
-└── *.Rproj # RStudio project file 
 
 ## Requirements
 
