@@ -1,0 +1,125 @@
+---
+title: "Data Cleaning & Validation - Global Ads Performance"
+author: "Andis"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+## Data Cleaning and Validation
+
+In this section I load the raw dataset, run basic quality checks (missing values and duplicates), fix data types for categorical variables, save a cleaned version, and finally run a few logical checks to make sure the metrics are internally consistent.
+
+```{r}
+library(here)
+library(tidyverse)
+
+# Load raw data set
+df <- read_csv(here("data", "raw", "global_ads_performance_dataset.csv"))
+
+head(df)
+```
+
+## Missing values and duplicates
+
+First, I checked for missing values (NA) and duplicated rows. In a clean dataset, both should return FALSE.
+
+```{r}
+any(is.na(df))         # (no missing values)
+any(duplicated(df))    #  (no duplicate rows)
+```
+
+## Convert categorical variables to factors
+Some variables are categorical (platform, campaign type, industry, country).
+I convert them to factors so that R treats them as categorical predictors in modeling.
+
+```{r}
+df_clean <- df %>%
+  mutate(across(c(platform, campaign_type, industry, country), as.factor))
+
+str(df_clean)
+```
+To confirm the factor conversion, I inspected the levels for one categorical column:
+
+```{r}
+levels(df_clean$country)
+```
+## Save cleaned dataset
+
+To keep the workflow clean, I save the cleaned dataset separately from the raw file.
+
+- Raw saved at ''data/raw''
+- Clean saved at ''data/clean'' into two files:
+- CSV: easy to view/share (factor columns are saved as their text labels)
+- RDS: preserves factor types exactly as stored in R
+
+```{r}
+dir.create(here("data", "cleaned"), showWarnings = FALSE, recursive = TRUE)
+
+# Save cleaned versions
+write_csv(df_clean, here("data", "cleaned", "global_ads_performance_dataset_cleaned.csv"))
+saveRDS(df_clean, here("data", "cleaned", "global_ads_performance_dataset_cleaned.rds"))
+```
+
+- Then I reload the RDS file to confirm the factor types are preserved:
+
+```{r}
+df_clean <- readRDS(here("data", "cleaned", "global_ads_performance_dataset_cleaned.rds"))
+head(df_clean)
+```
+
+## Logical consistency checks
+
+Even if a dataset has no missing values, it can still contain logical inconsistencies.
+For example, conversions should not exceed clicks, and clicks should not exceed impressions.
+Also, derived metrics (CTR, CPC, CPA, ROAS) should match their definitions up to tiny floating-point rounding.
+
+```{r}
+# should be 0 — you can't have more conversions than clicks
+sum(df_clean$conversions > df_clean$clicks) 
+
+# should be 0 — clicks must always be less than or equal to impressions
+sum(df_clean$clicks > df_clean$impressions)
+
+# should be very close to 0 (small e-06 or smaller) — just rounding differences
+mean(abs(df_clean$CTR - (df_clean$clicks / df_clean$impressions)))
+
+# should be ~0 — CPC is defined as ad_spend / clicks
+mean(abs(df_clean$CPC - (df_clean$ad_spend / df_clean$clicks)))
+
+# should be ~0 — CPA should equal ad_spend / conversions
+mean(abs(df_clean$CPA - (df_clean$ad_spend / df_clean$conversions)))
+
+# should be ~0 — ROAS should equal revenue / ad_spend
+mean(abs(df_clean$ROAS - (df_clean$revenue / df_clean$ad_spend)))
+
+```
+
+## Conclusion
+
+Overall, the dataset required minimal cleaning:
+
+- No missing values and no duplicate rows were found.
+
+- Categorical variables were converted to factors for proper handling in statistical models.
+
+- A cleaned CSV and an RDS version were saved to keep raw data untouched and maintain reproducibility.
+
+- Logical checks confirmed the dataset is logically consistent, and derived metrics match their definitions (up to minor floating-point precision).
+
+- The dataset is now ready.
+
+
+
