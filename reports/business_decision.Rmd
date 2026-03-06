@@ -1,0 +1,209 @@
+---
+title: "Strategic Performance Analysis"
+subtitle: "Global Ads Data - Business Insights"
+author: "Strategic Business Lead"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output: 
+  ioslides_presentation:
+    widescreen: true
+    transition: faster
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+library(tidyverse)
+library(randomForest)
+library(factoextra)
+library(cluster)
+
+# Loading the real, cleaned dataset
+data <- readRDS("data/cleaned/global_ads_performance_dataset_cleaned.rds")
+
+# Base calculations
+data <- data %>%
+  mutate(
+    CPA = ifelse(conversions > 0, ad_spend / conversions, NA),
+    ROAS = ifelse(ad_spend > 0, revenue / ad_spend, NA)
+  ) %>%
+  filter(!is.na(CPA), !is.na(ROAS))
+
+# Replicating Unsupervised clustering to make it available for plotting
+data_clust <- data %>% 
+  select(ad_spend, revenue, conversions, CTR, CPA, ROAS) %>%
+  mutate(
+    ad_spend = log1p(ad_spend),
+    revenue = log1p(revenue),
+    conversions = log1p(conversions)
+  )
+
+pca_res <- prcomp(data_clust, scale. = TRUE)
+pc_scores <- pca_res$x[, 1:2]
+
+set.seed(123)
+k4 <- kmeans(pc_scores, centers = 4, nstart = 50)
+
+# Attach cluster labels to main data for business plotting
+data$cluster <- as.factor(k4$cluster)
+```
+
+## Project Objective
+
+**Translating Statistical Learning into Business Decisions**
+
+The objective is to optimize the marketing portfolio. Exploratory Data Analysis (EDA), K-Means Clustering, and Random Forest models reveal clear patterns in budget behavior.
+
+**Our Strategic Focus:**
+
+- **Risk Management:** Identifying stable returns versus high-volatility environments.
+- **Cost Neutrality:** Evaluating the actual impact of industry sectors on acquisition costs.
+- **Segmentation:** Identifying hidden groupings in how campaigns scale and profit.
+- **Drivers of Revenue:** Isolating the true metrics that generate income.
+
+## 1. Baseline Health: The Zero-Waste Reality
+
+### Insight: The foundational strategy is already profitable.
+
+An analysis of campaigns generating zero revenue reveals the baseline health of the portfolio.
+
+**The Finding:** The dataset contains **zero campaigns** that spent budget without yielding at least some revenue. 
+
+<br>
+
+**Business Implication:** The portfolio does not suffer from structural failures, fraudulent bot-traffic drains, or broken conversion tracking. The strategic mandate is purely focused on **margin optimization**.
+
+## 2. Platform Risk vs. Reward
+
+### Insight: Volatility differs drastically by platform.
+
+```{r fig.height=3.5, fig.width=8}
+ggplot(data, aes(x = platform, y = ROAS, fill = platform)) +
+  geom_boxplot(alpha = 0.7, outlier.colour = "red", outlier.shape = 1) +
+  theme_minimal() +
+  labs(y = "Return on Ad Spend (ROAS)", x = "") +
+  theme(legend.position = "none")
+```
+
+**Business Implication:** TikTok Ads exhibit the highest median return but possess a massive variance. Google Ads operates as a highly compacted, conservative environment. Different platforms require different risk tolerances.
+
+## 3. The "Industry Neutrality" Concept
+
+### Insight: Competition costs are sector-agnostic.
+
+```{r fig.height=3.5, fig.width=8}
+ggplot(data, aes(x = industry, y = CPA, fill = industry)) +
+  geom_boxplot(alpha = 0.7) +
+  theme_minimal() +
+  labs(y = "Cost Per Acquisition (CPA) $", x = "") +
+  theme(legend.position = "none")
+```
+
+**Business Implication:** The median Cost Per Acquisition is nearly identical across Tech, Fashion, and Food. The sector does not grant an inherent pricing advantage in the ad auction.
+
+## 4. Campaign Format Glossary
+
+### Understanding Our Marketing Arsenal
+
+Before diving into formatting and segmentation, here is how we classify our campaigns:
+
+- **Search:** Text-based ads triggered by user search queries. Captures immediate, high-intent demand.
+- **Display:** Visual banner ads placed across websites and blogs. Drives mass awareness and brand recall.
+- **Video:** Pre-roll or mid-roll video advertisements. Generates high engagement through storytelling.
+- **Shopping:** Product listings showing image, price, and store directly in search results. Focused on frictionless conversions.
+
+## 5. Format Efficiency and Scalability
+
+### Insight: Efficiency decay varies by campaign type.
+
+```{r fig.height=3.5, fig.width=8}
+ggplot(data, aes(x = ad_spend, y = revenue, color = campaign_type)) +
+  geom_smooth(method = "lm", se = FALSE, size = 1.2) +
+  theme_minimal() +
+  labs(x = "Ad Spend ($)", y = "Total Revenue ($)")
+```
+
+**Business Implication:** "Search" and "Display" maintain a steeper, more efficient trajectory as budget increases. "Video" and "Shopping" show shallower slopes, implying faster diminishing returns at higher spend levels.
+
+## 6. Unsupervised Insights: The Two Dimensions
+
+### Insight: Complexity boils down to Scale vs. Efficiency.
+
+Our Principal Component Analysis (PCA) mathematically proved that despite tracking dozens of different metrics, campaign behavior is driven by only two orthogonal dimensions.
+
+1. **Campaign Scale:** Driven by raw Ad Spend, Volume of Conversions, and Revenue.
+2. **Campaign Efficiency:** Driven by ROAS, CPA, and Click-Through Rate (CTR).
+
+**Business Implication:** We must stop evaluating campaigns on vanity metrics. A campaign is only defined by how big it is (Scale) and how profitable it is (Efficiency).
+
+## 7. Unsupervised Insights: The 4 Segments
+
+### Insight: K-Means reveals 4 distinct campaign profiles.
+
+```{r fig.height=3.5, fig.width=8}
+ggplot(data, aes(x = ad_spend, y = ROAS, color = cluster)) +
+  geom_point(alpha = 0.5, size = 2) +
+  theme_minimal() +
+  labs(x = "Campaign Scale (Ad Spend)", y = "Campaign Efficiency (ROAS)", color = "K-Means Cluster") +
+  theme(legend.position = "bottom")
+```
+
+**Business Implication:** The algorithm naturally groups our portfolio into 4 quadrants. This heterogeneity proves that a "one-size-fits-all" budget strategy is mathematically flawed.
+
+## 8. Supervised Insights: Revenue Drivers
+
+### Insight: Interactivity outweighs exposure.
+
+```{r fig.height=3.5, fig.width=8}
+rf_data <- data %>% select(revenue, ad_spend, clicks, platform, industry, campaign_type) %>% drop_na()
+rf_model <- randomForest(revenue ~ ., data = rf_data, ntree = 100, importance = TRUE)
+varImpPlot(rf_model, main = "", pch = 16, color = "#2ecc71")
+```
+
+**Business Implication:** The predictive Random Forest model isolates the variables that forecast revenue. Beyond raw Ad Spend, the model heavily prioritizes engagement metrics (Clicks) over demographic classifications (Industry) or Platform.
+
+## 9. Action 1: The 70/30 Risk Split
+
+### Objective: Balance guaranteed returns with aggressive growth.
+
+**Implementation Plan:**
+
+* **70% Core Allocation (Google Ads):** Direct the majority of the daily budget into the low-variance environment. This secures the baseline revenue targets regardless of market fluctuations.
+* **30% Venture Allocation (TikTok Ads):** Deploy the remaining funds specifically to hunt for extreme, high-ROAS outliers. 
+
+**The Rationale:** Allocating 100% to TikTok introduces unacceptable mathematical variance to quarterly targets, while 100% in Google leaves potential profit on the table.
+
+## 10. Action 2: Halt Video Format Scaling
+
+### Objective: Protect profit margins from diminishing returns.
+
+**Implementation Plan:**
+
+* **Establish Budget Ceilings:** Enforce a hard spending cap on "Video" and "Shopping" campaigns to prevent efficiency decay.
+* **Automated Re-routing:** Once a Video campaign reaches its optimal spend threshold (before the slope flattens), automatically redirect surplus budget into "Search" and "Display" pipelines.
+
+**The Rationale:** The regression slopes mathematically prove these formats lack the capacity to absorb higher spend profitably.
+
+## 11. Action 3: The CPC Pivot
+
+### Objective: Align bidding mechanics with algorithmic predictors.
+
+**Implementation Plan:**
+
+* **Phase Out CPM:** Aggressively deprecate all campaigns currently paying for visual exposure (Cost-Per-Mille / Impressions).
+* **Transition to CPC:** Restructure the portfolio to exclusively utilize Cost-Per-Click bidding. 
+
+**The Rationale:** The Random Forest model proved that impressions and demographic data are weak predictors of actual income. User interactivity (Clicks) is the critical driver of success. We must only pay networks when concrete intent is demonstrated.
+
+## 12. Action 4: The Quadrant Strategy
+
+### Objective: Manage campaigns by algorithmic segments, not manually.
+
+
+
+**Implementation Plan:**
+
+We will apply strict management rules to the 4 clusters identified by the K-Means algorithm:
+
+* **High Scale / High Efficiency (The Stars):** Remove all budget caps. Feed these campaigns algorithmically until ROAS begins to drop.
+* **High Scale / Low Efficiency (The Bleeders):** Immediately trigger a creative audit. These campaigns are spending aggressively but destroying margin.
+* **Low Scale / High Efficiency (The Hidden Gems):** Incrementally increase budget by 15% week-over-week. They are profitable but artificially constrained by low spend.
+* **Low Scale / Low Efficiency (The Losers):** Pause immediately. Do not attempt to optimize.
