@@ -1,0 +1,129 @@
+---
+title: "05-performance-analysis"
+output: html_document
+author: Basak Doga Kayalar
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Goal
+As the Performance Auditor, I have evaluated the supervised and unsupervised models developed by the data science team. This report assesses model accuracy, checks for bias through residual analysis, and contextualizes the unsupervised clusters into actionable marketing intelligence.
+
+To provide a more robust evaluation of the supervised models, I have introduced Mean Absolute Error (MAE) alongside the team's RMSE calculations. While RMSE heavily penalizes large outlier errors, MAE provides a highly interpretable metric: the average absolute dollar amount our predictions are off by.
+
+The objective of this section is to conduct a performance audit of the supervised learning models trained previously.
+
+Tasks performed:
+
+Introduce a new business-centric metric: Mean Absolute Error (MAE)
+
+Consolidate model performance into a final comparison table
+
+Visualize error metrics across all models
+
+Analyze the residual errors of the best-performing model to check statistical assumptions
+
+(Note: This audit assumes the supervised learning script has been run and all model predictions and test_data are present in the global environment).
+
+
+#Load Libraries
+
+library(ggplot2)
+library(dplyr)
+
+
+#Additional Performance Metrics: Mean Absolute Error(MAE)
+# Function to calculate Mean Absolute Error
+calc_mae <- function(actual, predicted) {
+  mean(abs(actual - predicted))
+}
+
+# Calculate MAE for all previously trained models
+mae_lm <- calc_mae(y_test, lm_pred)
+mae_subset <- calc_mae(y_test, subset_pred)
+mae_ridge <- calc_mae(y_test, ridge_pred)
+mae_lasso <- calc_mae(y_test, lasso_pred)
+mae_pcr <- calc_mae(y_test, as.vector(pcr_pred))
+mae_pls <- calc_mae(y_test, as.vector(pls_pred))
+mae_tree <- calc_mae(y_test, tree_pred)
+mae_rf <- calc_mae(y_test, rf_pred)
+
+
+#Interpretation:
+While RMSE heavily penalizes large outlier errors by squaring them, MAE provides a highly interpretable metric: the average absolute dollar amount our predictions are off by.
+
+This metric is often easier to communicate to business stakeholders to explain everyday model accuracy.
+
+
+#Enhanced Model Comparison
+# Append MAE to the final_results table created in the supervised script
+audit_results <- final_results %>%
+  mutate(MAE = c(mae_lm, mae_subset, mae_ridge, mae_lasso, mae_pcr, mae_pls, mae_tree, mae_rf))
+
+# Sort by lowest RMSE to identify the overall winner
+audit_results <- audit_results[order(audit_results$RMSE), ]
+
+audit_results
+
+
+#Results
+The Forward Subset Selection model maintains its position as the best-performing model when evaluated with MAE, closely followed by Lasso regression.
+
+
+#Performance Visualizations
+ggplot(audit_results, aes(x = reorder(Model, RMSE), y = RMSE, fill = Model)) +
+  geom_bar(stat = "identity", show.legend = FALSE) +
+  scale_fill_viridis_d(option = "mako") +
+  theme_minimal() +
+  labs(title = "Model Performance Comparison (Lower is Better)", 
+       x = "Algorithm", y = "Root Mean Squared Error (RMSE)") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  
+  
+#Actual vs Predicted Revenue
+# Using the best performing model: Forward Subset
+plot_data <- data.frame(Actual = y_test, Predicted = as.vector(subset_pred))
+
+ggplot(plot_data, aes(x = Actual, y = Predicted)) +
+  geom_point(alpha = 0.5, color = "#2C7BB6") +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed", linewidth = 1) +
+  theme_minimal() +
+  labs(title = "Actual vs. Predicted Revenue (Forward Subset)", 
+       subtitle = "Dots closer to the red dashed line indicate higher accuracy",
+       x = "Actual Revenue ($)", y = "Predicted Revenue ($)")
+       
+       
+       
+In a perfect model, all predictions would fall exactly on the red dashed line. The plot shows the model performs reasonably well across most of the revenue range, though we can observe that variance increases at the very high end of the scale.       
+
+       
+#Residual Analysis
+plot_data$Residuals <- plot_data$Actual - plot_data$Predicted
+
+ggplot(plot_data, aes(x = Predicted, y = Residuals)) +
+  geom_point(alpha = 0.5, color = "darkgreen") +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed", linewidth = 1) +
+  theme_minimal() +
+  labs(title = "Residual Plot (Forward Subset)", 
+       subtitle = "Checking for homoscedasticity and uncaptured patterns",
+       x = "Predicted Revenue", y = "Residual Error")
+       
+       
+The residual plot checks for homoscedasticity. We want the errors (residuals) to be randomly scattered around the zero line (red dashed line) with no discernible pattern.
+
+If the dots form a "funnel" shape (getting wider as predicted revenue increases), it suggests the model's accuracy degrades slightly on larger ad campaigns, meaning it struggles more to predict massive revenue outliers.
+
+
+
+#Conclusion
+Based on the comparative analysis:
+
+Feature selection models (Forward Subset and Lasso) provide the best predictive accuracy for ad revenue in this dataset.
+
+Tree-based models struggled to generalize, yielding the highest prediction errors.
+
+The introduction of the MAE metric confirms our everyday accuracy.
+
+Future modeling improvements could involve transforming the revenue variable (e.g., log transformation) to account for the increasing variance seen in the higher-revenue campaigns in the residual plot.
