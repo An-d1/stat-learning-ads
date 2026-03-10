@@ -1,0 +1,556 @@
+---
+title: "03-supervised"
+author: "Timur Brevnov"
+date: "2026-03-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Project Goal
+
+The objective of this project is to predict **advertising revenue** using several supervised learning models.
+
+Models compared:
+
+- Linear Regression
+- Forward Subset Selection
+- Ridge Regression
+- Lasso Regression
+- PCR
+- PLS
+- Regression Trees
+- Random Forest
+
+Performance metrics:
+
+- RMSE
+- R²
+
+---
+
+## Load Libraries
+
+```{r}
+library(car)
+library(leaps)
+library(glmnet)
+library(pls)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+```
+
+---
+
+## Load Dataset
+
+```{r}
+ads_data <- readRDS("data/cleaned/global_ads_performance_dataset_cleaned.rds")
+
+ads_data$date <- NULL
+ads_data$ROAS <- NULL
+
+ads_data <- na.omit(ads_data)
+
+str(ads_data)
+```
+
+---
+
+## Train/Test Split
+
+```{r}
+set.seed(123)
+
+n <- nrow(ads_data)
+
+train_id <- sample(seq_len(n), size = floor(0.75 * n))
+
+train_data <- ads_data[train_id, ]
+test_data  <- ads_data[-train_id, ]
+
+y_train <- train_data$revenue
+y_test  <- test_data$revenue
+```
+
+---
+
+## Linear Regression
+
+```{r}
+lm_full <- lm(revenue ~ ., data = train_data)
+
+summary(lm_full)
+
+vif(lm_full)
+
+lm_pred <- predict(lm_full, test_data)
+
+rmse_lm <- sqrt(mean((y_test - lm_pred)^2))
+
+r2_lm <- 1 - sum((y_test - lm_pred)^2) /
+  sum((y_test - mean(y_test))^2)
+```
+## Model Performance
+
+The model achieved:
+
+- **R² = 0.6885**
+- **Adjusted R² = 0.6834**
+
+This indicates that approximately **69% of the variation in revenue** can be explained by the predictors included in the model.
+
+The overall model is statistically significant:
+
+- **F-statistic = 133.3**
+- **p-value < 2.2e-16**
+
+### Important Predictors
+
+The most significant predictors of revenue are:
+
+- **Conversions**  
+- **Ad Spend**  
+- **Country: USA**
+
+Conversions have the strongest effect on revenue, suggesting that increases in successful conversions lead to substantial increases in revenue.
+
+### Multicollinearity
+
+Variance Inflation Factor (VIF) was used to assess multicollinearity.
+
+Most predictors have acceptable VIF values, indicating that multicollinearity is not severe, although some advertising metrics such as clicks, impressions, and ad spend show moderate correlation.
+---
+
+## Forward Subset Selection
+
+```{r}
+regfit.fwd <- regsubsets(revenue ~ .,
+                         data = train_data,
+                         method = "forward",
+                         nvmax = ncol(train_data) - 1)
+
+reg.summary <- summary(regfit.fwd)
+
+plot(reg.summary$cp,
+     type="b",
+     pch=19,
+     main="Forward Selection - Cp",
+     xlab="Number of Variables",
+     ylab="Cp")
+
+best_subset_size <- which.min(reg.summary$cp)
+
+coef(regfit.fwd, best_subset_size)
+```
+## Model performance
+
+Forward subset selection was used to identify the most relevant predictors for explaining advertising revenue.
+
+The model was evaluated using **Mallow's Cp statistic**, where lower values indicate a better balance between model fit and complexity.
+
+The Cp plot shows that the **minimum Cp occurs at 3 predictors**, suggesting that a simple model with three variables provides the best trade-off between bias and variance.
+
+The best subset model includes:
+
+- countryUSA
+- ad_spend
+- conversions
+
+Intercept = -224.77  
+countryUSA = -3637.61  
+ad_spend = 0.294  
+conversions = 158.40  
+
+### Interpretation
+
+Conversions have the strongest positive effect on revenue, indicating that campaigns generating more conversions lead to higher revenue.
+
+Ad spend also has a positive effect, suggesting that increased advertising investment contributes to revenue growth.
+
+The negative coefficient for **countryUSA** indicates that campaigns targeting the United States generate slightly lower revenue compared to the baseline country category.
+---
+
+## Ridge Regression
+
+```{r}
+x_train <- model.matrix(revenue ~ . -1, train_data)
+x_test  <- model.matrix(revenue ~ . -1, test_data)
+
+cv.ridge <- cv.glmnet(x_train, y_train, alpha = 0)
+
+plot(cv.ridge)
+title("Ridge - CV MSE")
+
+ridge_pred <- predict(cv.ridge,
+                      s = "lambda.min",
+                      newx = x_test)
+
+rmse_ridge <- sqrt(mean((y_test - ridge_pred)^2))
+
+r2_ridge <- 1 - sum((y_test - ridge_pred)^2) /
+  sum((y_test - mean(y_test))^2)
+
+ridge_coefs <- coef(cv.ridge, s = "lambda.min")
+
+cat("Best lambda (Ridge):", cv.ridge$lambda.min, "\n\n")
+
+print(ridge_coefs)
+
+rmse_ridge <- sqrt(mean((y_test - ridge_pred)^2))
+r2_ridge <- 1 - sum((y_test - ridge_pred)^2) /
+  sum((y_test - mean(y_test))^2)
+```
+
+### Cross-Validation Results
+
+The optimal penalty parameter \( \lambda \) was selected using **cross-validation**.
+The cross-validation curve shows the relationship between the regularization parameter \( \lambda \) and the prediction error.
+
+The vertical dashed line indicates the value of \( \lambda \) that minimizes the **cross-validated mean squared error (CVMSE)**.
+
+As \( \lambda \) increases, coefficients are increasingly shrunk, reducing model variance but potentially increasing bias.
+
+### Interpretation
+
+Unlike Lasso, Ridge regression **does not remove variables**.  
+Instead, it shrinks coefficients to stabilize the model when predictors are correlated.
+
+Important predictors remain similar to those observed in previous models:
+
+- **conversions**
+- **ad_spend**
+- **CTR**
+- **clicks**
+
+Conversions and advertising spend continue to have strong positive effects on predicted revenue.
+---
+
+## Lasso Regression
+
+```{r}
+cv.lasso <- cv.glmnet(x_train, y_train, alpha = 1)
+
+plot(cv.lasso)
+title("Lasso - CV MSE")
+
+lasso_pred <- predict(cv.lasso,
+                      s = "lambda.min",
+                      newx = x_test)
+
+rmse_lasso <- sqrt(mean((y_test - lasso_pred)^2))
+
+r2_lasso <- 1 - sum((y_test - lasso_pred)^2) /
+  sum((y_test - mean(y_test))^2)
+
+lasso_coefs <- coef(cv.lasso, s = "lambda.min")
+
+cat("Best lambda (Lasso):", cv.lasso$lambda.min, "\n\n")
+
+print(lasso_coefs)
+
+rmse_lasso <- sqrt(mean((y_test - lasso_pred)^2))
+r2_lasso <- 1 - sum((y_test - lasso_pred)^2) /
+  sum((y_test - mean(y_test))^2)
+```
+### Cross-Validation
+
+The optimal value of the regularization parameter \( \lambda \) was selected using **cross-validation**, minimizing the prediction error.
+
+In the cross-validation plot, the numbers shown above the curve represent the **number of active predictors** in the model for each value of \( \lambda \).
+
+As \( \lambda \) increases, the model becomes simpler because more coefficients are shrunk to zero.
+
+### Selected Predictors
+
+Using the optimal \( \lambda \), the Lasso model retained only three predictors:
+
+- **countryUSA**
+- **ad_spend**
+- **conversions**
+
+All other predictors were shrunk to zero.
+
+### Interpretation
+
+The results suggest that **conversions and advertising spend are the primary drivers of revenue**.  
+Campaigns targeting the **USA** have a negative coefficient relative to the baseline country (Australia).
+---
+
+## PCR
+
+```{r}
+pcr.fit <- pcr(revenue ~ .,
+               data = train_data,
+               scale = TRUE,
+               validation = "CV")
+
+msep_pcr <- RMSEP(pcr.fit)
+
+rmse_pcr_cv <- sqrt(msep_pcr$val[1,1,-1])
+
+best_pcr_comp <- which.min(rmse_pcr_cv)
+
+pcr_pred <- predict(pcr.fit,
+                    test_data,
+                    ncomp = best_pcr_comp)
+
+rmse_pcr <- sqrt(mean((y_test - pcr_pred)^2))
+
+r2_pcr <- 1 - sum((y_test - pcr_pred)^2) /
+  sum((y_test - mean(y_test))^2)
+
+summary(pcr.fit)
+validationplot(pcr.fit, val.type="MSEP")
+abline(v = best_pcr_comp, col="red", lwd=2)
+```
+## Principal Component Regression (PCR)
+
+Principal Component Regression (PCR) is a dimensionality reduction technique that combines **Principal Component Analysis (PCA)** with linear regression.
+
+Instead of using the original predictors directly, PCR first transforms them into a set of **principal components**, which are uncorrelated linear combinations of the original variables.
+
+These components are then used as predictors in the regression model.
+
+### Cross-Validation
+
+The optimal number of principal components was selected using **cross-validation**.
+
+The plot shows the **Mean Squared Error of Prediction (MSEP)** as a function of the number of components.
+
+As the number of components increases, the prediction error initially decreases because more information from the predictors is included in the model.
+
+Based on the cross-validation results, the lowest prediction error is achieved when **22 components** are used.
+
+### Interpretation
+
+This indicates that most of the principal components contain useful predictive information, so the model performs best when using nearly all available components.
+
+---
+
+## PLS
+
+```{r}
+pls.fit <- plsr(revenue ~ .,
+                data = train_data,
+                scale = TRUE,
+                validation = "CV")
+
+msep_pls <- RMSEP(pls.fit)
+
+rmse_pls_cv <- sqrt(msep_pls$val[1,1,-1])
+
+best_pls_comp <- which.min(rmse_pls_cv)
+
+pls_pred <- predict(pls.fit,
+                    test_data,
+                    ncomp = best_pls_comp)
+
+rmse_pls <- sqrt(mean((y_test - pls_pred)^2))
+
+r2_pls <- 1 - sum((y_test - pls_pred)^2) /
+  sum((y_test - mean(y_test))^2)
+
+summary(pls.fit)
+
+validationplot(pls.fit,
+               val.type="MSEP",
+               main="PLS - CV MSEP")
+abline(v = best_pls_comp, col="red", lwd=2)
+```
+## Partial Least Squares (PLS)
+
+Partial Least Squares (PLS) regression is a dimensionality reduction technique similar to PCR, but it constructs components using information from both the predictors and the response variable.
+
+Instead of creating components that only maximize the variance of the predictors (as in PCA), PLS creates components that **maximize the covariance between predictors and the response variable**.
+
+This often leads to better predictive performance compared to PCR.
+
+### Cross-Validation
+
+The optimal number of components was selected using **cross-validation**.
+
+The plot shows the **Mean Squared Error of Prediction (MSEP)** as a function of the number of components.
+
+The vertical red line indicates the number of components that minimizes the cross-validated prediction error.
+
+Based on the cross-validation results, the optimal model uses **9 components**.
+
+### Interpretation
+
+The prediction error decreases rapidly when the first components are added, indicating that they capture the most important predictive information.
+
+After around **9 components**, the error stabilizes and additional components provide little improvement.
+
+This suggests that the relationship between predictors and revenue can be effectively captured using a relatively small number of components.
+---
+
+## Regression Tree
+
+```{r}
+tree_model <- rpart(revenue ~ .,
+                    data = train_data,
+                    method = "anova",
+                    control = rpart.control(cp = 0,
+                                            minsplit = 5,
+                                            xval = 10))
+
+plotcp(tree_model)
+
+best_cp <- tree_model$cptable[
+  which.min(tree_model$cptable[,"xerror"]),
+  "CP"]
+
+pruned_tree <- prune(tree_model, cp = best_cp)
+
+rpart.plot(pruned_tree)
+
+tree_pred <- predict(pruned_tree, test_data)
+
+rmse_tree <- sqrt(mean((y_test - tree_pred)^2))
+
+r2_tree <- 1 - sum((y_test - tree_pred)^2) /
+  sum((y_test - mean(y_test))^2)
+
+best_cp
+length(unique(pruned_tree$where))
+```
+## Tree Pruning
+
+The complexity of the tree was controlled using the **complexity parameter (cp)**.
+
+The plot shows the **cross-validated relative error** for different tree sizes.  
+The optimal tree size is selected by choosing the value of \(cp\) that minimizes the cross-validated error.
+
+Based on the cross-validation results, the selected value was:
+
+cp = **0.00966**
+
+After pruning the tree using this value, the final regression tree contains **5 terminal nodes**.
+
+Pruning reduces the size of the tree and helps prevent **overfitting** while maintaining good predictive performance.
+
+### Interpretation of the Tree
+
+The regression tree indicates that **conversions** is the most important variable for predicting revenue.
+
+The first split occurs at: **fewer than 221 conversions**
+
+This means that the number of conversions is the primary factor determining revenue levels.
+
+Further splits also depend on the number of conversions, indicating that higher numbers of conversions lead to higher predicted revenue.
+
+For example:
+campaigns with **fewer than 86 conversions** produce the lowest predicted revenue (~7000)
+campaigns with **more than 704 conversions** produce the highest predicted revenue (~161000)
+---
+
+## Random Forest
+
+```{r}
+rf_model <- randomForest(revenue ~ .,
+                         data = train_data,
+                         ntree = 500,
+                         mtry = floor(sqrt(ncol(train_data) - 1)),
+                         importance = TRUE)
+
+varImpPlot(rf_model)
+
+plot(sqrt(rf_model$mse),
+     type="l",
+     main="Random Forest - OOB RMSE",
+     xlab="Number of Trees",
+     ylab="OOB RMSE")
+
+rf_pred <- predict(rf_model, test_data)
+
+rmse_rf <- sqrt(mean((y_test - rf_pred)^2))
+
+r2_rf <- 1 - sum((y_test - rf_pred)^2) /
+  sum((y_test - mean(y_test))^2)
+```
+## Random Forest
+
+Random Forest is an ensemble learning method that builds a large number of decision trees and combines their predictions to improve accuracy and reduce overfitting.
+
+### Number of Trees
+
+The Out-of-Bag (OOB) error plot shows how the prediction error changes as the number of trees increases.
+
+Initially, the OOB RMSE decreases rapidly as more trees are added.  
+After approximately **200 trees**, the error stabilizes indicating that additional trees provide only minor improvements.
+
+### Variable Importance
+
+The variable importance plot ranks predictors based on their contribution to the model.
+
+The most important variable is **conversions**, followed by **clicks**, **ad_spend**, and **impressions**.
+
+This confirms the results obtained from earlier models, where **conversions consistently appeared as the strongest predictor of advertising revenue**.
+---
+
+## Model Comparison
+
+```{r}
+final_results <- data.frame(
+  Model = c("Linear",
+            "Forward Subset",
+            "Ridge",
+            "Lasso",
+            "PCR",
+            "PLS",
+            "Pruned Tree",
+            "Random Forest"),
+
+  RMSE = c(rmse_lm,
+           rmse_subset,
+           rmse_ridge,
+           rmse_lasso,
+           rmse_pcr,
+           rmse_pls,
+           rmse_tree,
+           rmse_rf),
+
+  R2 = c(r2_lm,
+         r2_subset,
+         r2_ridge,
+         r2_lasso,
+         r2_pcr,
+         r2_pls,
+         r2_tree,
+         r2_rf)
+)
+
+final_results <- final_results[order(final_results$RMSE), ]
+
+final_results
+```
+## Model Comparison
+
+We compared all models using **RMSE** and **R²** on the test data.
+
+- **RMSE** measures prediction error (lower is better).
+- **R²** shows how much of the variation in revenue the model explains (higher is better).
+
+### Results
+
+The **Forward Subset Selection** model performed best, with the lowest RMSE and the highest R².
+
+**Lasso regression** also performed very well and gave very similar results.
+
+The **Linear, PCR, and PLS** models produced similar performance.
+
+The **Ridge regression** model performed slightly worse.
+
+The **Pruned Tree and Random Forest** models had the highest prediction errors, meaning they were less accurate for this dataset.
+
+---
+
+## Conclusion
+
+Overall, the results suggest that **simple linear models work best for predicting advertising revenue in this dataset**.
+
+Across most models, **conversions** appears to be the most important predictor of revenue.
