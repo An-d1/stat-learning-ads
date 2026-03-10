@@ -217,55 +217,7 @@ data |>
 
 
 
-# 4. TIME SERIES ANALYSIS ---------------------------------- 
-# (we need to decide to keep or discard it, maybe too much for the project)
-library(lubridate) 
 
-# 4.1 TIME SERIES TRENDS (Daily Aggregation) -----------------------------------
-# Goal: Visualize the evolution of Spend vs Revenue over time to detect seasonality.
-
-# Aggregate data by Date
-daily_data <- data |>
-  group_by(date) |>
-  summarise(
-    Total_Spend = sum(ad_spend, na.rm = TRUE),
-    Total_Revenue = sum(revenue, na.rm = TRUE)
-  ) %>%
-  # Reshape for plotting both lines in one graph
-  pivot_longer(cols = c("Total_Spend", "Total_Revenue"), 
-               names_to = "Metric", 
-               values_to = "Amount")
-
-# Plot Time Series
-ggplot(daily_data, aes(x = date, y = Amount, color = Metric)) +
-  geom_line(size = 1) +
-  geom_smooth(method = "loess", se = FALSE, linetype = "dashed", alpha = 0.5) + # Smooth trend
-  
-  scale_color_manual(values = c("Total_Revenue" = "#2ecc71", "Total_Spend" = "#e74c3c")) +
-  theme_minimal() +
-  labs(title = "Daily Ad Spend vs. Revenue Trend",
-       subtitle = "Dashed lines represent the smoothed trend (Loess)",
-       x = "Date", y = "Amount ($)") +
-  theme(legend.position = "top")
-
-
-# 4.2 DAY OF WEEK ANALYSIS (Seasonality) ---------------------------------------
-# Goal: Identify if specific days (e.g., Weekends) perform better for Conversions.
-
-data |>
-  # Create a Day of Week column (Label = Mon, Tue..., Week_start = 1 for Monday)
-  mutate(day_of_week = wday(date, label = TRUE, week_start = 1)) |>
-  
-  # Filter out days with 0 conversions to see the distribution of active days
-  filter(conversions > 0) |>
-  
-  ggplot(aes(x = day_of_week, y = conversions, fill = day_of_week)) +
-  geom_boxplot(alpha = 0.7, outlier.shape = 1, outlier.alpha = 0.5) +
-  
-  theme_minimal() +
-  labs(title = "Conversions Distribution by Day of Week",
-       subtitle = "Do weekends perform differently than weekdays?",
-       x = "Day of Week", y = "Conversions") +
   theme(legend.position = "none") # Legend is redundant with x-axis labels
 
 # 5. OUTLIERS DETECTION ------------------------------------------
