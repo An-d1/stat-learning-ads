@@ -1,0 +1,147 @@
+---
+title: "Unsupervised Machine Learning: Advertising Campaign Segmentation"
+author: "Your Name"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: flatly
+    toc: yes
+    toc_float: yes
+    number_sections: yes
+---
+
+```{r setup, include=FALSE}
+# General settings for the document to keep it clean
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, fig.align = "center")
+
+# Load required libraries
+library(tidyverse)
+library(factoextra)
+library(cluster)
+
+# Load the cleaned dataset
+ads_data <- readRDS("data/cleaned/global_ads_performance_dataset_cleaned.rds")
+```
+
+# Executive Summary
+
+The primary objective of this project is to apply **Unsupervised Machine Learning** techniques to analyze 1,000 global advertising campaigns. By moving beyond simple averages, we aimed to discover hidden, data-driven patterns in campaign performance.
+
+We focused on two critical business dimensions:
+* **Scale Metrics:** Ad Spend, Revenue, Conversions.
+* **Efficiency Metrics:** Click-Through Rate (CTR), Cost Per Acquisition (CPA), and Return on Ad Spend (ROAS).
+
+Through Principal Component Analysis (PCA) and K-Means Clustering, we successfully segmented the entire portfolio into **four distinct strategic profiles**, revealing that platform choice heavily dictates risk, while campaign performance remains mostly industry-neutral.
+
+---
+
+# Methodology: Data Preparation & Dimensionality Reduction
+
+To ensure our clustering algorithm worked accurately, we first isolated the relevant numeric metrics and applied a logarithmic transformation (`log1p`) to scale-dependent variables (Spend, Revenue, Conversions). This prevented massive budgets from skewing the analysis.
+
+```{r data_prep}
+# Feature selection and transformation
+data_clust <- ads_data %>%
+  select(ad_spend, revenue, conversions, CTR, CPA, ROAS) %>%
+  mutate(
+    ad_spend = log1p(ad_spend),
+    revenue = log1p(revenue),
+    conversions = log1p(conversions)
+  )
+
+# Principal Component Analysis (PCA)
+pca_res <- prcomp(data_clust, scale. = TRUE)
+```
+
+By applying **Principal Component Analysis (PCA)**, we compressed our 6 complex variables into 2 main dimensions. The first two Principal Components explain nearly **80% of the total variance**, meaning we effectively simplified the data without losing its core business meaning. 
+
+---
+
+# Campaign Segmentation: K-Means Clustering
+
+Using the Silhouette method and the Gap Statistic, we determined mathematically that **4 clusters** provide the optimal segmentation for this dataset. 
+
+```{r kmeans_clustering}
+# Retain the first two components
+pc_scores <- pca_res$x[, 1:2]
+
+# Run K-Means with 4 centers
+set.seed(123)
+k4 <- kmeans(pc_scores, centers = 4, nstart = 50)
+
+# Attach cluster labels to the original dataset
+ads_data$cluster <- as.factor(k4$cluster)
+```
+
+## The 4 Strategic Profiles
+
+We categorized the clusters using standard portfolio management terminology to clearly define the necessary action items for each group.
+
+### 🌟 Cluster 3: The "Stars" (Max Volume, High Return)
+* **Average Ad Spend:** €11,539
+* **Average Revenue:** €63,058
+* **Average ROAS:** 6.30
+* **Business Insight:** These are the dominant campaigns in the portfolio. They manage the largest budgets while maintaining an excellent, highly profitable return.
+* **Strategic Action:** "Feed the winners." Remove budget caps and allow these campaigns to scale as much as possible until efficiency begins to drop.
+
+### 💎 Cluster 4: The "Hidden Gems" (Extreme Efficiency)
+* **Average Ad Spend:** €2,916
+* **Average Revenue:** €32,082
+* **Average ROAS:** 12.2 (The highest in the dataset)
+* **Business Insight:** These campaigns achieve massive results with minimal economic effort. They are highly optimized but currently underfunded.
+* **Strategic Action:** Incrementally increase their daily budgets (e.g., +15% per week) to test if they can maintain this extreme efficiency at a larger scale.
+
+### 🛡️ Cluster 1: The "Core" (Low Risk, Stable)
+* **Average Ad Spend:** €1,130
+* **Average Revenue:** €3,917
+* **Average ROAS:** 4.52
+* **Business Insight:** These represent the baseline of the account. They are small, stable, and generate safe returns without tying up large amounts of cash.
+* **Strategic Action:** Keep them active as a constant, low-risk revenue stream. No immediate optimization is required.
+
+### 🩸 Cluster 2: The "Bleeders" (Budget Wasters)
+* **Average Ad Spend:** €7,723
+* **Average Revenue:** €13,627
+* **Average ROAS:** 2.04 (The lowest in the dataset)
+* **Average CPA:** €85.50 (Extremely high acquisition cost)
+* **Business Insight:** These campaigns are actively burning profit margins. You are paying a premium to acquire customers who bring in very little revenue.
+* **Strategic Action:** Immediate intervention required. Pause these campaigns immediately or conduct a full creative and targeting audit before spending another dollar.
+
+---
+
+# Strategic Insights: Platform and Industry Trends
+
+By analyzing where these clusters live, we uncovered actionable rules for future media buying:
+
+```{r platforms_industries}
+# Platform distribution
+platform_dist <- prop.table(table(ads_data$cluster, ads_data$platform), 2)
+
+# Industry distribution
+industry_dist <- prop.table(table(ads_data$cluster, ads_data$industry), 2)
+```
+
+### 1. The Risk Profile of Platforms
+* **TikTok Ads is the Growth Engine:** A massive **42.4%** of all campaigns run on TikTok end up in the "Stars" group. It is the best platform for scaling volume.
+* **Google Ads is High-Risk:** Conversely, **40.4%** of Google Ads campaigns fall into the "Bleeders" category. Google requires much stricter budget controls and rigorous optimization to avoid wasted spend.
+* **Meta Ads is the Efficiency King:** Meta dominates Cluster 4 (Hidden Gems), making it the ideal platform for testing highly efficient, low-budget campaigns.
+
+### 2. The "Industry Neutrality" Concept
+When looking at the distribution across E-commerce, EdTech, Fintech, Healthcare, and SaaS, the cluster proportions remain remarkably consistent. The percentage of "Stars" consistently hovers between 20% and 31% regardless of the sector. 
+* **Conclusion:** Business success in this dataset is **not determined by the product you sell**, but by how the campaign is managed and the platform it is deployed on.
+
+---
+
+# Final Validation
+
+To ensure our 4-cluster structure was not a random output of the K-Means algorithm, we cross-validated the results using **Hierarchical Clustering**. 
+
+```{r hierarchical_validation, fig.cap="Dendrogram confirming the 4-cluster structure"}
+data_scaled <- scale(data_clust)
+dist_matrix <- dist(data_scaled)
+hc_complete <- hclust(dist_matrix, method = "complete")
+
+plot(hc_complete, main = "Dendrogram - Cluster Structure Verification", xlab = "", sub = "", labels = FALSE)
+rect.hclust(hc_complete, k = 4, border = 2:5)
+```
+
+The resulting dendrogram visibly confirmed the presence of 4 distinct pillars within our data matrix, proving that our strategic segmentation is mathematically robust and reliable.
