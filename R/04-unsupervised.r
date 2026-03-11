@@ -2,18 +2,15 @@
 # 04 - UNSUPERVISED LEARNING
 ############################################################
 
-
 # LIBRARIES -----------------------------------------------
 
 library(tidyverse)
 library(factoextra)
 library(cluster)
 
-
 # LOAD DATA ------------------------------------------------
 
 ads_data <- readRDS("data/cleaned/global_ads_performance_dataset_cleaned.rds")
-
 
 # FEATURE SELECTION ----------------------------------------
 
@@ -54,11 +51,13 @@ fviz_pca_var(pca_res, col.var = "contrib", repel = TRUE) +
   ggtitle("Variables Contribution")
 
 # PCA biplot
-fviz_pca_biplot(pca_res,
-                repel = TRUE,
-                col.var = "#2C7BB6",
-                col.ind = "grey80",
-                alpha.ind = 0.3) +
+fviz_pca_biplot(pca_res, 
+                geom.ind = "point",     
+                label = "var",          
+                repel = TRUE,           
+                col.var = "#2C7BB6",    
+                col.ind = "grey80",     
+                alpha.ind = 0.3) +      
   theme_minimal()
 
 
