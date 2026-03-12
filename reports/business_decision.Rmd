@@ -11,13 +11,14 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+
 library(tidyverse)
 library(randomForest)
 library(factoextra)
 library(cluster)
 
-# Loading the real, cleaned dataset
-data <- readRDS("data/cleaned/global_ads_performance_dataset_cleaned.rds")
+# Load data using the correct relative path from the reports folder
+data <- readRDS("../data/cleaned/global_ads_performance_dataset_cleaned.rds")
 
 # Base calculations
 data <- data %>%
@@ -196,8 +197,6 @@ varImpPlot(rf_model, main = "", pch = 16, color = "#2ecc71")
 ## 12. Action 4: The Quadrant Strategy
 
 ### Objective: Manage campaigns by algorithmic segments, not manually.
-
-
 
 **Implementation Plan:**
 
